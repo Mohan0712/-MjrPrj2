@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h3 class="card-title">Hospitals</h3>
+    <div id="list" class="row g-3 mt-2"></div>
+  </div>
+</div>
+
+<script>
+(async () => {
+  const r = await fetch("/api/hospitals/all");
+  const j = await r.json();
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  (j.hospitals || []).forEach(h => {
+    const col = document.createElement("div");
+    col.className = "col-md-6";
+    col.innerHTML = `
+      <div class="p-3 bg-white border rounded h-100">
+        <div class="fw-bold">${h.name}</div>
+        <div class="text-muted small">${h.address || ""}</div>
+        <div class="small">Specialties: ${(h.specialties || []).slice(0,5).join(", ") || "General"}</div>
+      </div>`;
+    list.appendChild(col);
+  });
+})();
+</script>
+{% endblock %}

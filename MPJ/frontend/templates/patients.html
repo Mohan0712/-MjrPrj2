@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h3 class="card-title">Patient Vitals (recent)</h3>
+    <div id="list" class="list-group mt-3"></div>
+  </div>
+</div>
+
+<script>
+(async () => {
+  const r = await fetch("/api/patients/recent");
+  const j = await r.json();
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  (j.records || []).forEach(p => {
+    const div = document.createElement("div");
+    div.className = "list-group-item";
+    div.innerHTML = `
+      <div class="d-flex justify-content-between">
+        <div>
+          <div class="fw-bold">${p.patient_id}</div>
+          <div class="text-muted small">Hospital: ${p.hospital_name}</div>
+          <div class="small">HR: ${p.vitals?.heart_rate} | SpO2: ${p.vitals?.oxygen_saturation}% | BP: ${p.vitals?.blood_pressure_systolic}/${p.vitals?.blood_pressure_diastolic}</div>
+        </div>
+        <div class="text-muted small">${new Date(p.created_at).toLocaleString()}</div>
+      </div>`;
+    list.appendChild(div);
+  });
+})();
+</script>
+{% endblock %}

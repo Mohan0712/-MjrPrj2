@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="p-4 bg-white rounded shadow-sm d-flex justify-content-between align-items-center">
+      <div>
+        <h2 class="h4 mb-1">Emergency Response Dashboard</h2>
+        <p class="text-muted mb-0">Quick overview and shortcuts</p>
+      </div>
+      <a class="btn btn-danger" href="/report">🚨 Report Emergency</a>
+    </div>
+  </div>
+
+  <!-- Connectivity -->
+  <div class="col-12 col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="mb-2">Backend / Database Status</h5>
+        <div id="healthBox" class="alert alert-secondary py-2 mb-3">Checking…</div>
+        <div class="small text-muted">Shows if Flask + MongoDB are reachable and basic counts.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Incidents -->
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between">
+          <h5 class="mb-0">Incidents (recent)</h5>
+          <a href="/incidents" class="small">View</a>
+        </div>
+        <ul id="incList" class="list-group list-group-flush mt-3 small"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vitals -->
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between">
+          <h5 class="mb-0">Patient Vitals (recent)</h5>
+          <a href="/patients" class="small">View</a>
+        </div>
+        <ul id="vitList" class="list-group list-group-flush mt-3 small"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hospitals -->
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between">
+          <h5 class="mb-0">Hospitals</h5>
+          <a href="/hospitals" class="small">View</a>
+        </div>
+        <ul id="hosList" class="list-group list-group-flush mt-3 small"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(async () => {
+  // Health
+  try {
+    const r = await fetch("/api/health");
+    const j = await r.json();
+    const box = document.getElementById("healthBox");
+    if (j.ok) {
+      box.className = "alert alert-success py-2 mb-3";
+      box.innerHTML = `
+        <div>✅ Connected to MongoDB Atlas</div>
+        <div class="small">
+          Hospitals: <strong>${j.counts?.bangalore_hospitals ?? 0}</strong> ·
+          Incidents: <strong>${j.counts?.incidents ?? 0}</strong> ·
+          Vitals: <strong>${j.counts?.vitals_records ?? 0}</strong>
+        </div>
+      `;
+    } else {
+      box.className = "alert alert-danger py-2 mb-3";
+      box.textContent = "❌ Health check failed: " + (j.error || "unknown error");
+    }
+  } catch (e) {
+    const box = document.getElementById("healthBox");
+    box.className = "alert alert-danger py-2 mb-3";
+    box.textContent = "❌ Health request error: " + e.message;
+  }
+
+  // Incidents
+  try {
+    const r = await fetch("/api/incidents/recent");
+    const j = await r.json();
+    const ul = document.getElementById("incList");
+    ul.innerHTML = "";
+    (j.incidents || []).slice(0,5).forEach(i => {
+      const li = document.createElement("li");
+      li.className = "list-group-item d-flex justify-content-between";
+      li.innerHTML = `<span>${(i.type || '').replaceAll('_',' ')} — <em>${i.severity}</em></span>
+                      <span class="text-muted">${new Date(i.created_at).toLocaleTimeString()}</span>`;
+      ul.appendChild(li);
+    });
+  } catch {}
+
+  // Vitals
+  try {
+    const r = await fetch("/api/patients/recent");
+    const j = await r.json();
+    const ul = document.getElementById("vitList");
+    ul.innerHTML = "";
+    (j.records || []).slice(0,5).forEach(p => {
+      const li = document.createElement("li");
+      li.className = "list-group-item d-flex justify-content-between";
+      li.innerHTML = `<span>${p.patient_id} → ${p.hospital_name}</span>
+                      <span class="text-muted">${new Date(p.created_at).toLocaleTimeString()}</span>`;
+      ul.appendChild(li);
+    });
+  } catch {}
+
+  // Hospitals
+  try {
+    const r = await fetch("/api/hospitals/all");
+    const j = await r.json();
+    const ul = document.getElementById("hosList");
+    ul.innerHTML = "";
+    (j.hospitals || []).slice(0,5).forEach(h => {
+      const li = document.createElement("li");
+      li.className = "list-group-item";
+      li.textContent = h.name;
+      ul.appendChild(li);
+    });
+  } catch {}
+})();
+</script>
+{% endblock %}

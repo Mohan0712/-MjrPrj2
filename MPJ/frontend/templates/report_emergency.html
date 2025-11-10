@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row g-4">
+  <!-- Step 1 -->
+  <div class="col-12 col-lg-6">
+    <div class="card border-0 shadow report-card">
+      <div class="card-body">
+        <h3 class="card-title fw-bold text-danger mb-3">🚨 Report Emergency</h3>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">📍 Location</label>
+          <div class="d-flex gap-2">
+            <button id="btnGPS" class="btn btn-primary">Get GPS Location</button>
+            <input id="manualLocation" class="form-control" placeholder="Or enter address (optional)" />
+          </div>
+          <div id="locStatus" class="form-text mt-1"></div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Emergency Type *</label>
+            <select id="emergencyType" class="form-select">
+              <option value="traffic_accident">Traffic Accident</option>
+              <option value="medical_emergency">Medical Emergency</option>
+              <option value="fire">Fire</option>
+              <option value="cardiac_arrest">Cardiac Arrest</option>
+              <option value="fall">Fall</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Severity *</label>
+            <select id="severity" class="form-select">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high" selected>High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <label class="form-label fw-semibold">Description (optional)</label>
+          <textarea id="description" class="form-control" rows="2" placeholder="What happened?"></textarea>
+        </div>
+
+        <div id="reportError" class="alert alert-danger mt-3 d-none"></div>
+
+        <button id="btnReport" class="btn btn-danger w-100 mt-3">
+          <span class="spinner-border spinner-border-sm me-2 d-none" id="reportSpinner"></span>
+          🚑 Send Emergency Alert
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="col-12 col-lg-6">
+    <div class="card border-0 shadow">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between">
+          <h3 class="card-title fw-bold text-primary">🏥 Recommended Hospitals</h3>
+          <span id="selectedHospitalBadge" class="badge text-bg-success d-none">Selected</span>
+        </div>
+        <p class="text-muted mb-3">Top 5 nearest based on your location.</p>
+
+        <div id="hospitalsError" class="alert alert-warning d-none"></div>
+
+        <div id="hospitalsContainer" class="row g-3"></div>
+        <div id="noHospitals" class="text-muted d-none">No recommendations yet — report first.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Step 3 -->
+<div id="vitalsPanel" class="card border-0 shadow mt-4 d-none">
+  <div class="card-body">
+    <h3 class="card-title fw-bold text-success">🩺 Live IoT Vitals & Manual Entry</h3>
+    <p class="text-muted mb-3">Update vitals and send to the selected hospital.</p>
+
+    <div class="row g-3">
+      <div class="col-6 col-md-2">
+        <label class="form-label">Heart Rate (BPM)</label>
+        <input id="v_hr" type="number" class="form-control" value="82">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">BP Systolic</label>
+        <input id="v_bp_sys" type="number" class="form-control" value="125">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">BP Diastolic</label>
+        <input id="v_bp_dia" type="number" class="form-control" value="80">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">SpO₂ (%)</label>
+        <input id="v_spo2" type="number" class="form-control" value="98">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Temperature (°C)</label>
+        <input id="v_temp" step="0.1" type="number" class="form-control" value="36.9">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Resp. Rate</label>
+        <input id="v_rr" type="number" class="form-control" value="16">
+      </div>
+    </div>
+
+    <div class="d-flex gap-2 mt-3">
+      <button id="btnSimulate" class="btn btn-outline-primary">🔄 Sync IoT (simulate)</button>
+      <button id="btnSendVitals" class="btn btn-success ms-auto">📤 Send Vitals to Hospital</button>
+    </div>
+    <div id="vitalsStatus" class="form-text mt-2"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  let currentLat = null, currentLon = null;
+  let selectedHospital = null;
+  let lastIncidentId = null;
+
+  const byId = (id) => document.getElementById(id);
+  const hospitalsContainer = byId("hospitalsContainer");
+  const noHospitals = byId("noHospitals");
+  const vitalsPanel = byId("vitalsPanel");
+  const selectedHospitalBadge = byId("selectedHospitalBadge");
+  const locStatus = byId("locStatus");
+  const reportSpinner = byId("reportSpinner");
+  const reportError = byId("reportError");
+  const hospitalsError = byId("hospitalsError");
+
+  // FAST GPS
+  byId("btnGPS").addEventListener("click", () => {
+    if (!navigator.geolocation) {
+      locStatus.textContent = "Geolocation not supported by your browser.";
+      return;
+    }
+    locStatus.textContent = "Detecting GPS… (allow permission)";
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        currentLat = pos.coords.latitude;
+        currentLon = pos.coords.longitude;
+        locStatus.textContent = `📍 ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)} (±${Math.round(pos.coords.accuracy)}m)`;
+      },
+      (err) => {
+        locStatus.textContent = "Failed to get GPS: " + err.message;
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+    );
+  });
+
+  // Report emergency
+  byId("btnReport").addEventListener("click", async () => {
+    reportError.classList.add("d-none");
+    hospitalsError.classList.add("d-none");
+
+    if (currentLat == null || currentLon == null) {
+      reportError.textContent = "Please capture GPS first.";
+      reportError.classList.remove("d-none");
+      return;
+    }
+
+    const payload = {
+      latitude: currentLat,
+      longitude: currentLon,
+      type: byId("emergencyType").value,
+      severity: byId("severity").value,
+      description: byId("description").value || ""
+    };
+
+    reportSpinner.classList.remove("d-none");
+    try {
+      // 1) Save incident
+      const incRes = await fetch("/api/incidents/report", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const incData = await incRes.json();
+      if (!incData.success) {
+        reportError.textContent = "Failed to report incident: " + (incData.message || "unknown error");
+        reportError.classList.remove("d-none");
+        reportSpinner.classList.add("d-none");
+        return;
+      }
+      lastIncidentId = incData.incident_id || null;
+
+      // 2) Fetch nearest hospitals
+      const res = await fetch("/api/hospitals/nearest", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ latitude: currentLat, longitude: currentLon })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        hospitalsError.textContent = data.message || "Failed to fetch hospitals";
+        hospitalsError.classList.remove("d-none");
+      }
+      renderHospitals(data.hospitals || [], data.meta);
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    } catch (e) {
+      reportError.textContent = "Network error: " + e.message;
+      reportError.classList.remove("d-none");
+    } finally {
+      reportSpinner.classList.add("d-none");
+    }
+  });
+
+  function renderHospitals(hospitals, meta) {
+    hospitalsContainer.innerHTML = "";
+    selectedHospital = null;
+    selectedHospitalBadge.classList.add("d-none");
+    vitalsPanel.classList.add("d-none");
+
+    if (!hospitals.length) {
+      noHospitals.classList.remove("d-none");
+      // Show a hint if DB seems empty
+      if (meta && meta.total_in_db === 0) {
+        hospitalsError.textContent = "No hospitals in DB (bangalore_hospitals is empty).";
+        hospitalsError.classList.remove("d-none");
+      }
+      return;
+    }
+    noHospitals.classList.add("d-none");
+
+    hospitals.forEach(h => {
+      const col = document.createElement("div");
+      col.className = "col-12 col-md-6";
+      col.innerHTML = `
+        <div class="card border-0 shadow-sm hospital-card h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <h5 class="fw-bold text-primary mb-1">${h.name || "Unnamed Hospital"}</h5>
+              <span class="badge text-bg-info">${h.distance} km</span>
+            </div>
+            <div class="text-muted small mb-2">${h.address || ""}</div>
+            <div class="small mb-2">🧪 Specialties: ${(h.specialties || []).slice(0,3).join(", ") || "General"}</div>
+            <button class="btn btn-outline-primary w-100 select-hospital">Select</button>
+          </div>
+        </div>
+      `;
+      const btn = col.querySelector(".select-hospital");
+      btn.addEventListener("click", () => {
+        selectedHospital = h;
+        selectedHospitalBadge.classList.remove("d-none");
+        selectedHospitalBadge.textContent = `Selected: ${h.name}`;
+        vitalsPanel.classList.remove("d-none");
+        [...hospitalsContainer.querySelectorAll(".hospital-card")].forEach(el => el.classList.remove("selected"));
+        col.querySelector(".hospital-card").classList.add("selected");
+      });
+      hospitalsContainer.appendChild(col);
+    });
+  }
+
+  // Simulate IoT
+  byId("btnSimulate").addEventListener("click", () => {
+    const rand = (base, spread, min=0, max=9999, fixed=0) =>
+      Math.min(max, Math.max(min, +(base + (Math.random()-0.5)*spread).toFixed(fixed)));
+
+    byId("v_hr").value = rand(88, 16, 55, 140);
+    byId("v_bp_sys").value = rand(125, 18, 90, 190);
+    byId("v_bp_dia").value = rand(80, 12, 55, 120);
+    byId("v_spo2").value = rand(97, 4, 85, 100);
+    byId("v_temp").value = rand(36.9, 1.2, 35, 40, 1);
+    byId("v_rr").value = rand(16, 6, 10, 35);
+    byId("vitalsStatus").textContent = "IoT vitals synced (simulated).";
+  });
+
+  // Send vitals
+  byId("btnSendVitals").addEventListener("click", async () => {
+    if (!selectedHospital) {
+      alert("Select a hospital first.");
+      return;
+    }
+    const vitals = {
+      heart_rate: +byId("v_hr").value || null,
+      blood_pressure_systolic: +byId("v_bp_sys").value || null,
+      blood_pressure_diastolic: +byId("v_bp_dia").value || null,
+      oxygen_saturation: +byId("v_spo2").value || null,
+      temperature: +byId("v_temp").value || null,
+      respiratory_rate: +byId("v_rr").value || null
+    };
+    const payload = {
+      patient_id: `PAT-${Date.now()}`,
+      hospital_name: selectedHospital.name,
+      vitals,
+      incident_id: lastIncidentId
+    };
+    try {
+      const res = await fetch("/api/patients/vitals", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        byId("vitalsStatus").textContent = `✅ Vitals sent to ${selectedHospital.name}`;
+        alert(`Vitals sent to ${selectedHospital.name}`);
+      } else {
+        alert("Failed to send vitals: " + (data.message || "unknown error"));
+      }
+    } catch (e) {
+      alert("Vitals error: " + e.message);
+    }
+  });
+})();
+</script>
+
+<style>
+.report-card { background: linear-gradient(160deg, #fff 0%, #fff 60%, #eef4ff 100%); }
+.hospital-card { border-left: 4px solid transparent; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.hospital-card:hover { transform: translateY(-2px); box-shadow: 0 .5rem 1rem rgba(0,0,0,.08)!important; border-color: #0d6efd; }
+.hospital-card.selected { border-color: #198754; box-shadow: 0 .5rem 1rem rgba(25,135,84,.15)!important; }
+</style>
+{% endblock %}
